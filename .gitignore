@@ -1,0 +1,20 @@
+# 数据文件
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# 上传的附件
+uploads/
+
+# 待关联文件夹
+待关联/
+
+# 系统文件
+.DS_Store
+__pycache__/
+*.pyc
+
+# 备份文件
+*.bak
+*.backup
