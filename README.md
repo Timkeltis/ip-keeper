@@ -15,13 +15,31 @@
 
 ## 快速开始
 
+### macOS
+
 ```bash
 # 安装依赖
-pip install flask openpyxl pdfminer.six pypdf
+pip3 install -r requirements.txt
+
+# 启动服务
+python3 server.py
+```
+
+或直接双击 `launch_ipkeeper.sh` / `启动知产管家.command`。
+
+### Windows
+
+```cmd
+# 安装依赖
+pip install -r requirements.txt
 
 # 启动服务
 python server.py
 ```
+
+或直接双击 `start.bat`（自动安装依赖并打开浏览器）。
+
+### 访问
 
 浏览器打开 http://localhost:5678
 

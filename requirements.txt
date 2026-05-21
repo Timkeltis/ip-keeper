@@ -1,0 +1,4 @@
+flask>=2.0
+openpyxl>=3.0
+pdfminer.six>=20221105
+pypdf>=3.0

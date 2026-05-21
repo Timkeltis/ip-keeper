@@ -14,7 +14,18 @@ uploads/
 .DS_Store
 __pycache__/
 *.pyc
+Thumbs.db
+desktop.ini
 
 # 备份文件
 *.bak
 *.backup
+
+# 日志
+*.log
+
+# 临时导出
+*.csv
+
+# macOS 应用包
+知产管家.app/
