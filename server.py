@@ -2041,6 +2041,14 @@ def docs_all():
         rows = [dict(r) for r in db.execute(sql, params).fetchall()]
     return ok(rows)
 
+@app.route('/api/documents/count', methods=['GET','OPTIONS'])
+def docs_count():
+    """返回附件总数"""
+    if request.method == 'OPTIONS': return ok()
+    with get_db() as db:
+        row = db.execute("SELECT COUNT(*) AS c FROM documents").fetchone()
+    return ok({'count': row['c'] if row else 0})
+
 @app.route('/api/documents/bulk-download', methods=['POST','OPTIONS'])
 def docs_bulk_download():
     """批量下载附件（打包ZIP）"""
