@@ -25,6 +25,9 @@ if not (STATIC_DIR/'index.html').exists():
 app = Flask(__name__, static_folder=str(STATIC_DIR))
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
+# CORS 配置 — 默认允许本地，可通过环境变量 IPKEEPER_CORS_ORIGINS 自定义（逗号分隔）
+CORS_ORIGINS = os.environ.get('IPKEEPER_CORS_ORIGINS', '*')
+
 ALLOWED_EXT = {'.pdf','.png','.jpg','.jpeg','.docx','.doc','.xlsx','.xls',
                '.zip','.rar','.txt','.ofd','.msg','.eml'}
 
@@ -132,7 +135,6 @@ def get_fee(patent_type, year, entity):
 def get_db():
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 # ── 自动关联辅助 ────────────────────────────────────────────
@@ -264,6 +266,23 @@ def init_db():
             ('alert_trademark_renewal','365,180,30'),('alert_pct_phase','60,30'),
             ('default_fee_entity','有费减-单个主体');
         """)
+        # WAL 模式 — 只需设置一次，提升并发读写性能
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA foreign_keys=ON")
+        # 性能索引 — 加速列表查询和去重检查
+        db.execute("CREATE INDEX IF NOT EXISTS idx_patents_app_no ON patents(app_no)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_patents_status ON patents(status)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_patents_created ON patents(created_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_trademarks_app_no ON trademarks(app_no)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_trademarks_status ON trademarks(status)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_trademarks_created ON trademarks(created_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_copyrights_reg_no ON copyrights(reg_no)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_copyrights_created ON copyrights(created_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_documents_item ON documents(item_type, item_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_fee_payments_patent ON fee_payments(patent_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_fee_payments_date ON fee_payments(paid_date)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_status_history_item ON status_history(item_type, item_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_alerts_dismissed ON alerts_dismissed(alert_id)")
         for col in [("patents","current_year","INTEGER DEFAULT 1"),
                     ("patents","fee_entity","TEXT DEFAULT '有费减-单个主体'"),
                     ("patents","tags","TEXT DEFAULT '[]'"),
@@ -276,7 +295,14 @@ def init_db():
                     ("copyrights","tags","TEXT DEFAULT '[]'"),
                     ("copyrights","type","TEXT DEFAULT '原始'"),
                     ("copyrights","language","TEXT"),
-                    ("documents","description","TEXT DEFAULT ''")]:
+                    ("documents","description","TEXT DEFAULT ''"),
+                   ("trademarks","rejection_date","TEXT"),
+                   ("patents","oa_date","TEXT"),
+                   ("patents","rejection_date","TEXT"),
+                   ("patents","grant_notice_date","TEXT"),
+                   ("trademarks","pub_date","TEXT"),
+                   ("trademarks","opposition_notice_date","TEXT"),
+                   ("trademarks","reg_fee_notice_date","TEXT")]:
             try: db.execute(f"ALTER TABLE {col[0]} ADD COLUMN {col[1]} {col[2]}")
             except: pass
         # 修复历史数据：将旧的企业规模分类统一更新为"有费减-单个主体"（最常见场景）
@@ -336,7 +362,7 @@ def clear_trademark_logo(db, tid):
 
 @app.after_request
 def add_cors(resp):
-    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Origin'] = CORS_ORIGINS
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     resp.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
     return resp
@@ -718,6 +744,8 @@ def patents_api():
         q = request.args.get('q','').strip()
         status  = request.args.get('status','')
         country = request.args.get('country','').strip()
+        page  = max(1, request.args.get('page', 1, type=int))
+        limit = min(5000, max(1, request.args.get('limit', 1000, type=int)))
         with get_db() as db:
             sql = "SELECT * FROM patents WHERE 1=1"; params = []
             if q:
@@ -725,8 +753,10 @@ def patents_api():
                 p = f'%{q}%'; params += [p,p,p,p,p,p]
             if status:  sql += " AND status=?";  params.append(status)
             if country: sql += " AND country=?"; params.append(country)
-            rows = db.execute(sql+" ORDER BY created_at DESC", params).fetchall()
-        return ok([patent_row_to_dict(r) for r in rows])
+            count_sql = sql.replace("SELECT *", "SELECT COUNT(*)", 1)
+            total = db.execute(count_sql, params).fetchone()[0]
+            rows = db.execute(sql+" ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [limit, (page-1)*limit]).fetchall()
+        return ok({'items': [patent_row_to_dict(r) for r in rows], 'total': total, 'page': page, 'limit': limit, 'pages': max(1, math.ceil(total/limit))})
     d = request.json
     app_date = d.get('app_date')
     country = _normalize_country(d.get('country', '中国'))
@@ -737,14 +767,16 @@ def patents_api():
     with get_db() as db:
         cur = db.execute("""INSERT INTO patents
             (title,app_no,pub_no,grant_no,type,country,status,app_date,pub_date,grant_date,
-             inventors,owner,agent,ipc,next_fee_date,current_year,fee_entity,notes,tags)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             inventors,owner,agent,ipc,next_fee_date,current_year,fee_entity,notes,tags,
+             oa_date,rejection_date,grant_notice_date)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (d.get('title',''),d.get('app_no',''),d.get('pub_no',''),d.get('grant_no',''),
                  p_type,country,p_status,
              app_date,d.get('pub_date'),d.get('grant_date'),
              d.get('inventors',''),d.get('owner',''),d.get('agent',''),d.get('ipc',''),
              next_fee_date,current_year,d.get('fee_entity','有费减-单个主体'),
-             d.get('notes',''),json.dumps(d.get('tags',[]))))
+             d.get('notes',''),json.dumps(d.get('tags',[])),
+             d.get('oa_date'),d.get('rejection_date'),d.get('grant_notice_date')))
         new_id = cur.lastrowid
         record_status_change(db,'patent',new_id,None,p_status,'创建案件')
     return ok({"id": new_id})
@@ -778,13 +810,15 @@ def patent_detail(pid):
             new_tags = _json_list(d.get('tags'), old_tags) if d.get('tags') is not None else old_tags
             db.execute("""UPDATE patents SET title=?,app_no=?,pub_no=?,grant_no=?,type=?,country=?,status=?,
                 app_date=?,pub_date=?,grant_date=?,inventors=?,owner=?,agent=?,ipc=?,next_fee_date=?,
-                current_year=?,fee_entity=?,notes=?,tags=?,updated_at=? WHERE id=?""",
+                current_year=?,fee_entity=?,notes=?,tags=?,oa_date=?,rejection_date=?,grant_notice_date=?,updated_at=? WHERE id=?""",
                 (_keep('title'),_keep('app_no'),_keep('pub_no'),_keep('grant_no'),
                  p_type,country,p_status,
                  app_date,_keep('pub_date'),grant_date,
                  _keep('inventors'),_keep('owner'),_keep('agent'),_keep('ipc'),
                  next_fee_date,current_year,_keep('fee_entity','有费减-单个主体'),
-                 _keep('notes'),json.dumps(new_tags),now_str(),pid))
+                 _keep('notes'),json.dumps(new_tags),
+                 _keep('oa_date'),_keep('rejection_date'),_keep('grant_notice_date'),
+                 now_str(),pid))
             record_status_change(db,'patent',pid,old_status,p_status,d.get('status_note',''))
         return ok()
     with get_db() as db:
@@ -852,6 +886,8 @@ def trademarks_api():
         status  = request.args.get('status','')
         classes = request.args.get('classes','').strip()
         country = request.args.get('country','').strip()
+        page  = max(1, request.args.get('page', 1, type=int))
+        limit = min(5000, max(1, request.args.get('limit', 1000, type=int)))
         with get_db() as db:
             sql = "SELECT * FROM trademarks WHERE 1=1"; params = []
             if q:
@@ -860,19 +896,22 @@ def trademarks_api():
             if status:  sql += " AND status=?";          params.append(status)
             if classes: sql += " AND classes LIKE ?";    params.append(f'%{classes}%')
             if country: sql += " AND country=?";         params.append(country)
-            rows = db.execute(sql+" ORDER BY created_at DESC", params).fetchall()
-        return ok([row_to_dict(r) for r in rows])
+            count_sql = sql.replace("SELECT *", "SELECT COUNT(*)", 1)
+            total = db.execute(count_sql, params).fetchone()[0]
+            rows = db.execute(sql+" ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [limit, (page-1)*limit]).fetchall()
+        return ok({'items': [row_to_dict(r) for r in rows], 'total': total, 'page': page, 'limit': limit, 'pages': max(1, math.ceil(total/limit))})
     d = request.json
     tm_type = norm_tm_type(d.get('type','文字'))
     tm_status = norm_tm_status(d.get('status','已受理'))
     with get_db() as db:
         cur = db.execute("""INSERT INTO trademarks
-            (name,app_no,reg_no,type,classes,goods_services,country,status,app_date,reg_date,renewal_date,owner,agent,notes,tags)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (name,app_no,reg_no,type,classes,goods_services,country,status,app_date,reg_date,renewal_date,owner,agent,notes,tags,rejection_date,pub_date,opposition_notice_date,reg_fee_notice_date)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (d.get('name',''),d.get('app_no',''),d.get('reg_no',''),tm_type,
              d.get('classes',''),d.get('goods_services',''),d.get('country','中国'),tm_status,
              d.get('app_date'),d.get('reg_date'),d.get('renewal_date'),
-             d.get('owner',''),d.get('agent',''),d.get('notes',''),json.dumps(d.get('tags',[]))))
+             d.get('owner',''),d.get('agent',''),d.get('notes',''),json.dumps(d.get('tags',[])),
+             d.get('rejection_date'),d.get('pub_date'),d.get('opposition_notice_date'),d.get('reg_fee_notice_date')))
         new_id = cur.lastrowid
         record_status_change(db,'trademark',new_id,None,tm_status,'创建案件')
     return ok({"id": new_id})
@@ -892,20 +931,24 @@ def trademark_detail(tid):
             old_status = old['status'] if old else None
             if tm_type == '图形':
                 db.execute("""UPDATE trademarks SET name=?,app_no=?,reg_no=?,type=?,classes=?,goods_services=?,country=?,status=?,
-                    app_date=?,reg_date=?,renewal_date=?,owner=?,agent=?,notes=?,tags=?,updated_at=? WHERE id=?""",
+                    app_date=?,reg_date=?,renewal_date=?,owner=?,agent=?,notes=?,tags=?,rejection_date=?,pub_date=?,opposition_notice_date=?,reg_fee_notice_date=?,updated_at=? WHERE id=?""",
                     (d.get('name',''),d.get('app_no',''),d.get('reg_no',''),tm_type,
                      d.get('classes',''),d.get('goods_services',''),d.get('country','中国'),tm_status,
                      d.get('app_date'),d.get('reg_date'),d.get('renewal_date'),
                      d.get('owner',''),d.get('agent',''),d.get('notes',''),
-                     json.dumps(d.get('tags',[])),now_str(),tid))
+                     json.dumps(d.get('tags',[])),d.get('rejection_date'),
+                     d.get('pub_date'),d.get('opposition_notice_date'),d.get('reg_fee_notice_date'),
+                     now_str(),tid))
             else:
                 db.execute("""UPDATE trademarks SET name=?,app_no=?,reg_no=?,type=?,classes=?,goods_services=?,country=?,status=?,
-                    app_date=?,reg_date=?,renewal_date=?,owner=?,agent=?,notes=?,tags=?,logo_filename='',updated_at=? WHERE id=?""",
+                    app_date=?,reg_date=?,renewal_date=?,owner=?,agent=?,notes=?,tags=?,rejection_date=?,pub_date=?,opposition_notice_date=?,reg_fee_notice_date=?,logo_filename='',updated_at=? WHERE id=?""",
                     (d.get('name',''),d.get('app_no',''),d.get('reg_no',''),tm_type,
                      d.get('classes',''),d.get('goods_services',''),d.get('country','中国'),tm_status,
                      d.get('app_date'),d.get('reg_date'),d.get('renewal_date'),
                      d.get('owner',''),d.get('agent',''),d.get('notes',''),
-                     json.dumps(d.get('tags',[])),now_str(),tid))
+                     json.dumps(d.get('tags',[])),d.get('rejection_date'),
+                     d.get('pub_date'),d.get('opposition_notice_date'),d.get('reg_fee_notice_date'),
+                     now_str(),tid))
                 if old and old['logo_filename']:
                     f = UPLOAD_DIR / old['logo_filename']
                     if f.exists():
@@ -928,13 +971,17 @@ def copyrights_api():
     if request.method == 'OPTIONS': return ok()
     if request.method == 'GET':
         q = request.args.get('q','').strip()
+        page  = max(1, request.args.get('page', 1, type=int))
+        limit = min(5000, max(1, request.args.get('limit', 1000, type=int)))
         with get_db() as db:
             sql = "SELECT * FROM copyrights WHERE 1=1"; params = []
             if q:
                 sql += " AND (name LIKE ? OR reg_no LIKE ? OR owner LIKE ?)"
                 p = f'%{q}%'; params += [p,p,p]
-            rows = db.execute(sql+" ORDER BY created_at DESC", params).fetchall()
-        return ok([row_to_dict(r) for r in rows])
+            count_sql = sql.replace("SELECT *", "SELECT COUNT(*)", 1)
+            total = db.execute(count_sql, params).fetchone()[0]
+            rows = db.execute(sql+" ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [limit, (page-1)*limit]).fetchall()
+        return ok({'items': [row_to_dict(r) for r in rows], 'total': total, 'page': page, 'limit': limit, 'pages': max(1, math.ceil(total/limit))})
     d = request.json
     with get_db() as db:
         cur = db.execute("""INSERT INTO copyrights
@@ -1792,13 +1839,80 @@ def alerts_upcoming():
         for t in db.execute("SELECT * FROM trademarks WHERE status IN ('已注册','注册') AND renewal_date IS NOT NULL AND renewal_date<=?", (cutoff,)).fetchall():
             r = row_to_dict(t)
             classify(r['renewal_date'], {'id':r['id'],'kind':'tm_renewal','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
+        # 商标驳回复审（15天期限）
+        for t in db.execute("SELECT * FROM trademarks WHERE status='已驳回' AND rejection_date IS NOT NULL").fetchall():
+            r = row_to_dict(t)
+            try:
+                deadline = (date.fromisoformat(r['rejection_date']) + timedelta(days=15)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'tm_rejection_review','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
+            except: pass
+        # ─── 专利确权期限 ───
+        # 答复审查意见（15天）
+        for p in db.execute("SELECT * FROM patents WHERE status IN ('实审中','审查中') AND oa_date IS NOT NULL").fetchall():
+            r = row_to_dict(p)
+            try:
+                deadline = (date.fromisoformat(r['oa_date']) + timedelta(days=15)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'patent_oa_response','title':r['title'],'app_no':r['app_no'],'owner':r['owner'],'type':r['type'],'country':r['country']})
+            except: pass
+        # 驳回复审（15天）
+        for p in db.execute("SELECT * FROM patents WHERE status='已驳回' AND rejection_date IS NOT NULL").fetchall():
+            r = row_to_dict(p)
+            try:
+                deadline = (date.fromisoformat(r['rejection_date']) + timedelta(days=15)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'patent_rejection_review','title':r['title'],'app_no':r['app_no'],'owner':r['owner'],'type':r['type'],'country':r['country']})
+            except: pass
+        # 授权登记缴费（2个月）
+        for p in db.execute("SELECT * FROM patents WHERE status IN ('已授权','授权') AND grant_notice_date IS NOT NULL AND grant_date IS NULL").fetchall():
+            r = row_to_dict(p)
+            try:
+                deadline = (date.fromisoformat(r['grant_notice_date']) + timedelta(days=60)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'patent_grant_pay','title':r['title'],'app_no':r['app_no'],'owner':r['owner'],'type':r['type'],'country':r['country']})
+            except: pass
+        # 实质审查请求（3年）
+        for p in db.execute("SELECT * FROM patents WHERE status IN ('已受理','初审中','公开') AND app_date IS NOT NULL").fetchall():
+            r = row_to_dict(p)
+            try:
+                deadline = (date.fromisoformat(r['app_date']) + timedelta(days=3*365)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'patent_exam_request','title':r['title'],'app_no':r['app_no'],'owner':r['owner'],'type':r['type'],'country':r['country']})
+            except: pass
         # 专利有效期（20年）
         for p in db.execute("SELECT * FROM patents WHERE status IN ('已授权','授权') AND grant_date IS NOT NULL", []).fetchall():
             r = row_to_dict(p)
             try:
-                expire = date.fromisoformat(r['grant_date'][:10]).replace(year=date.fromisoformat(r['grant_date'][:10]).year+20)
+                gdt = date.fromisoformat(r['grant_date'][:10])
+                expire = gdt.replace(year=gdt.year+20)
                 if expire.isoformat() <= cutoff:
                     classify(expire.isoformat(), {'id':r['id'],'kind':'patent_expire','title':r['title'],'app_no':r['app_no'],'owner':r['owner'],'type':r['type'],'country':r['country']})
+            except: pass
+        # ─── 商标确权期限 ───
+        # 初审公告异议期（3个月）
+        for t in db.execute("SELECT * FROM trademarks WHERE status='初审公告' AND pub_date IS NOT NULL").fetchall():
+            r = row_to_dict(t)
+            try:
+                deadline = (date.fromisoformat(r['pub_date']) + timedelta(days=90)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'tm_opposition_period','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
+            except: pass
+        # 异议答辩（30天）
+        for t in db.execute("SELECT * FROM trademarks WHERE status='异议中' AND opposition_notice_date IS NOT NULL").fetchall():
+            r = row_to_dict(t)
+            try:
+                deadline = (date.fromisoformat(r['opposition_notice_date']) + timedelta(days=30)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'tm_opposition_response','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
+            except: pass
+        # 注册费缴纳（15天）
+        for t in db.execute("SELECT * FROM trademarks WHERE status='已受理' AND reg_fee_notice_date IS NOT NULL").fetchall():
+            r = row_to_dict(t)
+            try:
+                deadline = (date.fromisoformat(r['reg_fee_notice_date']) + timedelta(days=15)).isoformat()
+                if deadline <= cutoff:
+                    classify(deadline, {'id':r['id'],'kind':'tm_reg_fee','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
             except: pass
 
     for lst in result.values(): lst.sort(key=lambda x: x['days'])
@@ -1829,6 +1943,8 @@ def service_status():
 @app.route('/api/service/shutdown', methods=['POST','OPTIONS'])
 def service_shutdown():
     if request.method == 'OPTIONS': return ok()
+    if request.remote_addr not in ('127.0.0.1', '::1'):
+        return err('仅允许本地访问', 403)
     def _stop():
         os._exit(0)
     threading.Timer(0.25, _stop).start()
@@ -2564,7 +2680,9 @@ def bulk_delete_documents():
 
 @app.route('/api/diagnostic')
 def diagnostic():
-    """诊断端点：返回服务器基本信息"""
+    """诊断端点：返回服务器基本信息（仅本地访问）"""
+    if request.remote_addr not in ('127.0.0.1', '::1'):
+        return err('仅允许本地访问', 403)
     import sys
     return ok({
         'base_dir': str(BASE_DIR),
