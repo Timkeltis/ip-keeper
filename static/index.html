@@ -396,7 +396,8 @@ var _Recharts = Recharts,
   ResponsiveContainer = _Recharts.ResponsiveContainer,
   PieChart = _Recharts.PieChart,
   Pie = _Recharts.Pie,
-  Cell = _Recharts.Cell;
+  Cell = _Recharts.Cell,
+  Legend = _Recharts.Legend;
 var BASE = 'http://localhost:5678/api';
 function parseDownloadName(cd, fallback) {
   if (!cd) return fallback;
@@ -3375,8 +3376,8 @@ function AlertsView(_ref20) {
 
   React.useEffect(function(){ loadUpcoming(days); }, [days]);
 
-  var KIND_LABEL = {patent_fee:'专利年费', tm_renewal:'商标续展', patent_expire:'专利到期', tm_rejection_review:'商标驳回复审', patent_oa_response:'答复审查意见', patent_rejection_review:'专利驳回复审', patent_grant_pay:'授权登记缴费', patent_exam_request:'实质审查请求', tm_opposition_period:'初审公告异议期', tm_opposition_response:'异议答辩', tm_reg_fee:'注册费缴纳'};
-  var KIND_COLOR = {patent_fee:'#2563eb', tm_renewal:'#ea580c', patent_expire:'#7c3aed', tm_rejection_review:'#dc2626', patent_oa_response:'#dc2626', patent_rejection_review:'#dc2626', patent_grant_pay:'#059669', patent_exam_request:'#d97706', tm_opposition_period:'#ea580c', tm_opposition_response:'#dc2626', tm_reg_fee:'#059669'};
+  var KIND_LABEL = {patent_fee:'专利年费', tm_renewal:'商标续展', patent_expire:'专利到期', tm_rejection_review:'商标驳回复审', patent_oa_response:'答复审查意见', patent_rejection_review:'专利驳回复审', patent_grant_pay:'授权登记缴费', patent_exam_request:'实质审查请求', tm_opposition_period:'初审公告异议期', tm_opposition_response:'异议答辩'};
+  var KIND_COLOR = {patent_fee:'#2563eb', tm_renewal:'#ea580c', patent_expire:'#7c3aed', tm_rejection_review:'#dc2626', patent_oa_response:'#dc2626', patent_rejection_review:'#dc2626', patent_grant_pay:'#059669', patent_exam_request:'#d97706', tm_opposition_period:'#ea580c', tm_opposition_response:'#dc2626'};
   var isDomestic = function(x){
     var c = String(x.country || '').trim();
     if (c) return c === '中国' || c === 'CN' || c === 'China';
@@ -3462,8 +3463,8 @@ function AlertsView(_ref20) {
       React.createElement('div', {style:{display:'flex', gap:8, marginBottom:14}},
         [{k:'patent',label:'\u{1F527} 专利预警',color:'#2563eb',bg:'#eff6ff',border:'#bfdbfe',
           kinds:[['all','\u5168\u90e8\u4e13\u5229'],['patent_fee','\u5e74\u8d39\u7f34\u7eb3'],['patent_oa_response','\u7b54\u590d\u5ba1\u67e5\u610f\u89c1'],['patent_rejection_review','\u9a73\u56de\u590d\u5ba1'],['patent_grant_pay','\u6388\u6743\u767b\u8bb0\u7f34\u8d39'],['patent_exam_request','\u5b9e\u8d28\u5ba1\u67e5\u8bf7\u6c42'],['patent_expire','\u4e13\u5229\u671f\u6ee1']]},
-         {k:'tm',label:'\u{1F3F7}\uFE0F \u5546\u6807\u9884\u8b66',color:'#ea580c',bg:'#fff7ed',border:'#fed7aa',
-          kinds:[['all','\u5168\u90e8\u5546\u6807'],['tm_renewal','\u7eed\u5c55\u767b\u8bb0'],['tm_rejection_review','\u9a73\u56de\u590d\u5ba1'],['tm_opposition_period','\u521d\u5ba1\u516c\u544a\u5f02\u8bae\u671f'],['tm_opposition_response','\u5f02\u8bae\u7b54\u8fa9'],['tm_reg_fee','\u6ce8\u518c\u8d39\u7f34\u7eb3']]}
+         {k:'tm',label:'\u{1F3F7}\uFE0F 商标预警',color:'#ea580c',bg:'#fff7ed',border:'#fed7aa',
+          kinds:[['all','全部商标'],['tm_renewal','续展登记'],['tm_rejection_review','驳回复审'],['tm_opposition_period','初审公告异议期'],['tm_opposition_response','异议答辩']]}
         ].map(function(tab){
           var active = tab.k==='patent' ? (kindFilter==='all' || kindFilter.indexOf('patent')===0) : (kindFilter==='tm' || kindFilter.indexOf('tm_')===0);
           var cnt = allItems.filter(function(x){return tab.k==='patent'?x.kind.indexOf('patent')===0:x.kind.indexOf('tm_')===0;}).length;
@@ -3487,7 +3488,7 @@ function AlertsView(_ref20) {
           var accent = isPatent?'#2563eb':'#ea580c';
           var kinds = isPatent ?
             [['all','全部'],['patent_fee','年费缴纳'],['patent_oa_response','答复审查意见'],['patent_rejection_review','驳回复审'],['patent_grant_pay','授权登记缴费'],['patent_exam_request','实质审查请求'],['patent_expire','专利期满']] :
-            [['all','全部'],['tm_renewal','续展登记'],['tm_rejection_review','驳回复审'],['tm_opposition_period','初审公告异议期'],['tm_opposition_response','异议答辩'],['tm_reg_fee','注册费缴纳']];
+            [['all','全部'],['tm_renewal','续展登记'],['tm_rejection_review','驳回复审'],['tm_opposition_period','初审公告异议期'],['tm_opposition_response','异议答辩']];
           return kinds.map(function(opt){
             var k=opt[0], l=opt[1];
             var filterK = k==='all' ? (isPatent?'all':'tm') : k;
@@ -4229,7 +4230,30 @@ function ModSearch(cfg) {
     else if(['已驳回','主动撤回','失效'].includes(p.status)) pCountryMap[c].failed++;
   });
   var pCountryData = Object.values(pCountryMap).sort(function(a,b){return b.total-a.total;});
-  var PTABS=[{id:'inventor',label:'发明人'},{id:'owner',label:'申请人/权利人'},{id:'fee',label:'年费'},{id:'type',label:'类型'},{id:'ipc',label:'技术方向'},{id:'country',label:'国家/地区'}];
+  var PTABS=[{id:'inventor',label:'发明人'},{id:'owner',label:'申请人/权利人'},{id:'fee',label:'年费'},{id:'type',label:'类型'},{id:'ipc',label:'技术方向'},{id:'country',label:'国家/地区'},{id:'yearly',label:'年度'}];
+
+  // 年度分析数据
+  var yearlyMap = {};
+  patents.forEach(function(p){
+    var yA = p.app_date ? p.app_date.slice(0,4) : null;
+    var yG = p.grant_date ? p.grant_date.slice(0,4) : null;
+    var pt = normPatentType(p.type);
+    if(yA){
+      if(!yearlyMap[yA]) yearlyMap[yA]={year:yA,app:0,grant:0,app_inv:0,app_util:0,app_des:0,grant_inv:0,grant_util:0,grant_des:0};
+      yearlyMap[yA].app++;
+      if(pt==='发明') yearlyMap[yA].app_inv++;
+      else if(pt==='实用新型') yearlyMap[yA].app_util++;
+      else if(pt==='外观设计') yearlyMap[yA].app_des++;
+    }
+    if(yG){
+      if(!yearlyMap[yG]) yearlyMap[yG]={year:yG,app:0,grant:0,app_inv:0,app_util:0,app_des:0,grant_inv:0,grant_util:0,grant_des:0};
+      yearlyMap[yG].grant++;
+      if(pt==='发明') yearlyMap[yG].grant_inv++;
+      else if(pt==='实用新型') yearlyMap[yG].grant_util++;
+      else if(pt==='外观设计') yearlyMap[yG].grant_des++;
+    }
+  });
+  var yearlyData = Object.values(yearlyMap).sort(function(a,b){return a.year>b.year?1:-1;});
 
   // ── 商标 data ─────────────────────────────────────────
   var tmStatusData = ['已受理','初审公告','已注册','复审中','异议中','撤三中','无效中','已撤销','已期满','已驳回'].map(function(s){
@@ -4585,6 +4609,68 @@ function ModSearch(cfg) {
                 c.authorized>0&&React.createElement('span',{style:{fontSize:10,background:'#dcfce7',color:'#16a34a',borderRadius:5,padding:'2px 7px'}},c.authorized+'授'),
                 c.pending>0&&React.createElement('span',{style:{fontSize:10,background:'#e0f2fe',color:'#0891b2',borderRadius:5,padding:'2px 7px'}},c.pending+'审'));})))),
 
+        tab==='yearly'&&React.createElement('div',null,
+      yearlyData.length===0
+        ?React.createElement('div',{style:{textAlign:'center',color:'#94a3b8',padding:'60px 0',fontSize:13}},'暂无年度数据')
+        :React.createElement('div',null,
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}},
+            React.createElement(KCard,{label:'申请总年跨度',value:yearlyData.length+'年',color:'#2563eb'}),
+            React.createElement(KCard,{label:'最活跃申请年',value:(function(){var t=[].concat(yearlyData).sort(function(a,b){return b.app-a.app;})[0];return t?t.year+'年 '+t.app+'件':'—';})(),color:'#0891b2'}),
+            React.createElement(KCard,{label:'最活跃授权年',value:(function(){var t=[].concat(yearlyData).sort(function(a,b){return b.grant-a.grant;})[0];return t&&t.grant>0?t.year+'年 '+t.grant+'件':'—';})(),color:'#16a34a'}),
+            React.createElement(KCard,{label:'今年申请',value:(yearlyData.filter(function(d){return d.year===String(nowY);})[0]||{app:0}).app+'件',color:'#7c3aed'})),
+          React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}},
+            React.createElement(Section,{title:'逐年申请量趋势'},
+              React.createElement(ResponsiveContainer,{width:'100%',height:200},
+                React.createElement(BarChart,{data:yearlyData,margin:{top:4,right:0,left:-24,bottom:0}},
+                  React.createElement(XAxis,{dataKey:'year',tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false}),
+                  React.createElement(YAxis,{tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false,allowDecimals:false}),
+                  React.createElement(Tooltip,{contentStyle:TS}),
+                  React.createElement('div',{style:{position:'absolute',top:0,right:0,display:'flex',gap:8,fontSize:10}},
+                    [{c:'#2563eb',l:'发明'},{c:'#0891b2',l:'实用新型'},{c:'#7c3aed',l:'外观设计'}].map(function(x){
+                      return React.createElement('span',{key:x.l,style:{display:'inline-flex',alignItems:'center',gap:3}},
+                        React.createElement('span',{style:{width:8,height:8,borderRadius:2,background:x.c,display:'inline-block'}}),
+                        React.createElement('span',{style:{color:'#64748b'}},x.l));
+                    })),
+                  React.createElement(Bar,{dataKey:'app_inv',name:'发明',stackId:'a',fill:'#2563eb',radius:[0,0,0,0]}),
+                  React.createElement(Bar,{dataKey:'app_util',name:'实用新型',stackId:'a',fill:'#0891b2'}),
+                  React.createElement(Bar,{dataKey:'app_des',name:'外观设计',stackId:'a',fill:'#7c3aed',radius:[4,4,0,0]})))),
+            React.createElement(Section,{title:'逐年授权量趋势'},
+              React.createElement(ResponsiveContainer,{width:'100%',height:200},
+                React.createElement(BarChart,{data:yearlyData,margin:{top:4,right:0,left:-24,bottom:0}},
+                  React.createElement(XAxis,{dataKey:'year',tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false}),
+                  React.createElement(YAxis,{tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false,allowDecimals:false}),
+                  React.createElement(Tooltip,{contentStyle:TS}),
+                  React.createElement('div',{style:{position:'absolute',top:0,right:0,display:'flex',gap:8,fontSize:10}},
+                    [{c:'#16a34a',l:'发明'},{c:'#059669',l:'实用新型'},{c:'#a3e635',l:'外观设计'}].map(function(x){
+                      return React.createElement('span',{key:x.l,style:{display:'inline-flex',alignItems:'center',gap:3}},
+                        React.createElement('span',{style:{width:8,height:8,borderRadius:2,background:x.c,display:'inline-block'}}),
+                        React.createElement('span',{style:{color:'#64748b'}},x.l));
+                    })),
+                  React.createElement(Bar,{dataKey:'grant_inv',name:'发明',stackId:'b',fill:'#16a34a',radius:[0,0,0,0]}),
+                  React.createElement(Bar,{dataKey:'grant_util',name:'实用新型',stackId:'b',fill:'#059669'}),
+                  React.createElement(Bar,{dataKey:'grant_des',name:'外观设计',stackId:'b',fill:'#a3e635',radius:[4,4,0,0]}))))),
+          React.createElement(Section,{title:'年度明细表'},
+            React.createElement('div',{style:{overflowX:'auto'}},
+              React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:12}},
+                React.createElement('thead',null,
+                  React.createElement('tr',null,
+                    ['年度','申请总数','发明','实用新型','外观','授权总数','发明授权','实用授权','外观授权'].map(function(h){
+                      return React.createElement('th',{key:h,style:{padding:'8px 10px',textAlign:'right',borderBottom:'2px solid #D8E8F7',color:'#64748b',fontWeight:600,fontSize:11,whiteSpace:'nowrap'}},h);
+                    }))),
+                React.createElement('tbody',null,
+                  yearlyData.map(function(d){
+                    return React.createElement('tr',{key:d.year,style:{borderBottom:'1px solid #F1F5F9'}},
+                      React.createElement('td',{style:{padding:'7px 10px',fontWeight:700,color:'#1e293b',textAlign:'right'}},d.year),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',fontWeight:600}},d.app),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#2563eb'}},d.app_inv||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#0891b2'}},d.app_util||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#7c3aed'}},d.app_des||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',fontWeight:600}},d.grant||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#16a34a'}},d.grant_inv||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#059669'}},d.grant_util||'—'),
+                      React.createElement('td',{style:{padding:'7px 10px',textAlign:'right',color:'#a3e635'}},d.grant_des||'—'));
+                  }))))))),
+
 // ── 商标统计 ──────────────────────────────────────────
     !showComp&&ipTab==='trademark'&&React.createElement('div',null,
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}},
@@ -4660,46 +4746,33 @@ function ModSearch(cfg) {
             React.createElement(KCard,{label:'软著总数',value:copyrights.length,color:'#16a34a',
               onClick:onNavigate&&function(){onNavigate({view:'copyright',status:'全部',type:null});}}),
             React.createElement(KCard,{label:'权利人数',value:Object.keys(crOwnerMap).length,color:'#2563eb'}),
-            React.createElement(KCard,{label:'最新登记年份',value:crYearData.length?crYearData[crYearData.length-1].year:'—',color:'#7c3aed'})),
-          crYearData.length>1&&React.createElement(Section,{title:'逐年登记数量趋势',style:{marginBottom:14}},
-            React.createElement(ResponsiveContainer,{width:'100%',height:150},
-              React.createElement(BarChart,{data:crYearData,margin:{top:4,right:0,left:-24,bottom:0}},
-                React.createElement(XAxis,{dataKey:'year',tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false}),
-                React.createElement(YAxis,{tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false,allowDecimals:false}),
-                React.createElement(Tooltip,{contentStyle:TS,formatter:function(v){return [v,'登记数量'];}}),
-                React.createElement(Bar,{dataKey:'v',name:'软著数',fill:'#16a34a',radius:[5,5,0,0]})))),
+            React.createElement(KCard,{label:'人均持有量',value:crOwnerData.length?(copyrights.length/crOwnerData.length).toFixed(1)+'件':'—',color:'#7c3aed',sub:'平均每位持有人'})),
           React.createElement('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}},
-            React.createElement(Section,{title:'软件类型分布'},
-              crTypeData.length>0
-                ?crTypeData.map(function(e,i){
-                  var max=crTypeData[0].v||1;
+            React.createElement(Section,{title:'持有人统计'},
+              crOwnerData.length>0
+                ?crOwnerData.slice(0,8).map(function(e,i){
+                  var max=crOwnerData[0].v||1;
                   return React.createElement('div',{key:e.name,style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
-                    React.createElement('div',{style:{width:8,height:8,borderRadius:2,background:COLORS[i],flexShrink:0}}),
-                    React.createElement('span',{style:{fontSize:12,color:'#475569',flex:1}},e.name),
+                    React.createElement('span',{style:{fontSize:11,color:'#cbd5e1',minWidth:18,textAlign:'right',fontFamily:'monospace'}},i+1),
+                    React.createElement('span',{style:{fontSize:12,color:'#475569',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.name),
                     React.createElement('div',{style:{flex:1,height:7,background:'#EEF4FC',borderRadius:4,overflow:'hidden'}},
-                      React.createElement('div',{style:{width:(e.v/max*100)+'%',height:'100%',background:COLORS[i],borderRadius:4}})),
+                      React.createElement('div',{style:{width:(e.v/max*100)+'%',height:'100%',background:'#16a34a',borderRadius:4}})),
                     React.createElement('span',{style:{fontSize:13,fontWeight:700,color:'#1e293b',fontFamily:'monospace',minWidth:22,textAlign:'right'}},e.v));
                 })
                 :React.createElement('div',{style:{textAlign:'center',color:'#94a3b8',paddingTop:40,fontSize:12}},'暂无数据')),
-            React.createElement(Section,{title:'按登记年份趋势'},
-              crYearData.length>1
-                ?React.createElement(ResponsiveContainer,{width:'100%',height:160},
-                  React.createElement(BarChart,{data:crYearData,margin:{top:0,right:0,left:-22,bottom:0}},
-                    React.createElement(XAxis,{dataKey:'year',tick:{fill:'#94a3b8',fontSize:11},axisLine:false,tickLine:false}),
-                    React.createElement(YAxis,{tick:{fill:'#94a3b8',fontSize:10},axisLine:false,tickLine:false,allowDecimals:false}),
-                    React.createElement(Tooltip,{contentStyle:TS}),
-                    React.createElement(Bar,{dataKey:'v',name:'登记数量',fill:'#16a34a',radius:[4,4,0,0]})))
-                :React.createElement('div',{style:{textAlign:'center',color:'#94a3b8',paddingTop:40,fontSize:12}},'数据不足'))),
-          React.createElement(Section,{title:'权利人持有排名'},
-            crOwnerData.map(function(e,i){
-              var max=crOwnerData[0].v||1;
-              return React.createElement('div',{key:e.name,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid #F5F9FF'}},
-                React.createElement('span',{style:{fontSize:11,color:'#cbd5e1',minWidth:18,textAlign:'right',fontFamily:'monospace'}},i+1),
-                React.createElement('span',{style:{fontSize:13,color:'#1e293b',fontWeight:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.name),
-                React.createElement('div',{style:{width:120,height:7,background:'#EEF4FC',borderRadius:4,overflow:'hidden'}},
-                  React.createElement('div',{style:{width:(e.v/max*100)+'%',height:'100%',background:'#16a34a',borderRadius:4}})),
-                React.createElement('span',{style:{fontSize:14,fontWeight:700,color:'#16a34a',fontFamily:'monospace',minWidth:24,textAlign:'right'}},e.v));
-            }))))
+            React.createElement(Section,{title:'年度登记趋势'},
+              crYearData.length>0
+                ?React.createElement('div',null,
+                  React.createElement('div',{style:{display:'flex',gap:4,alignItems:'flex-end',height:140,marginBottom:10}},
+                    crYearData.map(function(e){
+                      var max=Math.max.apply(null,crYearData.map(function(x){return x.v;}))||1;
+                      return React.createElement('div',{key:e.year,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3}},
+                        React.createElement('span',{style:{fontSize:11,color:'#1e293b',fontFamily:'monospace'}},e.v),
+                        React.createElement('div',{style:{width:'100%',height:Math.max(4,e.v/max*100),background:'#16a34a',borderRadius:'3px 3px 0 0'}}),
+                        React.createElement('span',{style:{fontSize:10,color:'#94a3b8'}},e.year));
+                    }))
+                )
+                :React.createElement('div',{style:{textAlign:'center',color:'#94a3b8',paddingTop:40,fontSize:12}},'暂无数据')))))
 ));
 }
 
@@ -5334,7 +5407,6 @@ function TrademarkForm(_ref39) {
   f.status==='已驳回'?/*#__PURE__*/React.createElement(FR, null, /*#__PURE__*/React.createElement(FF, {label:"驳回通知收到日"}, /*#__PURE__*/React.createElement(Inp, {v:f.rejection_date, on:s('rejection_date'), type:"date"})), /*#__PURE__*/React.createElement(FF, {label:"复审截止日"}, /*#__PURE__*/React.createElement('div',{style:Object.assign({},IS,{background:'#FEF2F2',color:'#dc2626',fontWeight:600})}, f.rejection_date?(new Date(new Date(f.rejection_date).getTime()+15*86400000).toISOString().slice(0,10)):'--'))):
   f.status==='初审公告'?/*#__PURE__*/React.createElement(FR, null, /*#__PURE__*/React.createElement(FF, {label:"初审公告日"}, /*#__PURE__*/React.createElement(Inp, {v:f.pub_date, on:s('pub_date'), type:"date"})), /*#__PURE__*/React.createElement(FF, {label:"异议期截止"}, /*#__PURE__*/React.createElement('div',{style:Object.assign({},IS,{background:'#FFFBEB',color:'#d97706',fontWeight:600})}, f.pub_date?(new Date(new Date(f.pub_date).getTime()+90*86400000).toISOString().slice(0,10)):'--'))):
   f.status==='异议中'?/*#__PURE__*/React.createElement(FR, null, /*#__PURE__*/React.createElement(FF, {label:"异议通知收到日"}, /*#__PURE__*/React.createElement(Inp, {v:f.opposition_notice_date, on:s('opposition_notice_date'), type:"date"})), /*#__PURE__*/React.createElement(FF, {label:"答辩截止"}, /*#__PURE__*/React.createElement('div',{style:Object.assign({},IS,{background:'#FEF2F2',color:'#dc2626',fontWeight:600})}, f.opposition_notice_date?(new Date(new Date(f.opposition_notice_date).getTime()+30*86400000).toISOString().slice(0,10)):'--'))):
-  f.status==='已受理'?/*#__PURE__*/React.createElement(FR, null, /*#__PURE__*/React.createElement(FF, {label:"注册费缴费通知日"}, /*#__PURE__*/React.createElement(Inp, {v:f.reg_fee_notice_date, on:s('reg_fee_notice_date'), type:"date"})), /*#__PURE__*/React.createElement(FF, {label:"缴费截止"}, /*#__PURE__*/React.createElement('div',{style:Object.assign({},IS,{background:'#ECFDF5',color:'#059669',fontWeight:600})}, f.reg_fee_notice_date?(new Date(new Date(f.reg_fee_notice_date).getTime()+15*86400000).toISOString().slice(0,10)):'--'))):
   /*#__PURE__*/React.createElement(FR, null, /*#__PURE__*/React.createElement(FF, {label:"续展截止日 ⚠"}, /*#__PURE__*/React.createElement(Inp, {v:f.renewal_date, on:s('renewal_date'), type:"date"})), /*#__PURE__*/React.createElement(FF, {label:"权利人"}, /*#__PURE__*/React.createElement(Inp, {v:f.owner, on:s('owner'), ph:"公司名称"}))),
   /*#__PURE__*/React.createElement(FF, {
     label: "\u4EE3\u7406\u673A\u6784"
@@ -7003,6 +7075,8 @@ function buildDataHealth(patents, trademarks, copyrights) {
     if ((p.status === '已授权' || p.status === '授权') && !p.grant_date) add('日期完整性', 'high', 'patent', p, '已授权专利缺少授权日', p.title || p.app_no || '未命名专利', 'grant_date');
     if (p.grant_date && !(p.status === '已授权' || p.status === '授权')) add('状态一致性', 'medium', 'patent', p, '已有授权日但状态不是已授权', (p.title || p.app_no || '') + '：' + (p.status || '未填状态'), 'status');
     if ((p.status === '已授权' || p.status === '授权') && (!p.country || p.country === '中国') && !p.next_fee_date) add('期限维护', 'medium', 'patent', p, '授权专利缺少年费日', p.title || p.app_no || '未命名专利', 'next_fee_date');
+    if (p.status === '已驳回' && !p.rejection_date) add('预警数据', 'high', 'patent', p, '已驳回专利缺少驳回决定收到日', p.title || p.app_no || '未命名专利', 'rejection_date');
+    if ((p.status === '已授权' || p.status === '授权') && !p.grant_date && !p.grant_notice_date) add('预警数据', 'medium', 'patent', p, '已授权专利缺少授权通知日', p.title || p.app_no || '未命名专利', 'grant_notice_date');
     if (!p.owner) add('基础信息', 'low', 'patent', p, '专利缺少权利人', p.title || p.app_no || '未命名专利', 'owner');
   });
   trademarks.forEach(function(t) {
@@ -7013,6 +7087,9 @@ function buildDataHealth(patents, trademarks, copyrights) {
     if (t.status && !TSTAT.includes(normalizeTrademarkStatus(t.status))) add('字段标准化', 'medium', 'trademark', t, '未知商标状态', (t.name || t.app_no || '') + '：' + t.status, 'status');
     if ((t.status === '已注册' || t.status === '注册') && !t.reg_date) add('日期完整性', 'high', 'trademark', t, '已注册商标缺少注册日', t.name || t.app_no || '未命名商标', 'reg_date');
     if ((t.status === '已注册' || t.status === '注册') && !t.renewal_date) add('期限维护', 'medium', 'trademark', t, '已注册商标缺少续展截止日', t.name || t.app_no || '未命名商标', 'renewal_date');
+    if (t.status === '初审公告' && !t.pub_date) add('预警数据', 'high', 'trademark', t, '初审公告商标缺少公告日', t.name || t.app_no || '未命名商标', 'pub_date');
+    if (t.status === '异议中' && !t.opposition_notice_date) add('预警数据', 'high', 'trademark', t, '异议中商标缺少异议通知收到日', t.name || t.app_no || '未命名商标', 'opposition_notice_date');
+    if (t.status === '已驳回' && !t.rejection_date) add('预警数据', 'high', 'trademark', t, '已驳回商标缺少驳回通知收到日', t.name || t.app_no || '未命名商标', 'rejection_date');
     if (!t.classes) add('基础信息', 'medium', 'trademark', t, '商标缺少尼斯分类', t.name || t.app_no || '未命名商标', 'classes');
     if (t.classes) {
       String(t.classes).split(/[,，;；\s\/]+/).filter(Boolean).forEach(function(c) {

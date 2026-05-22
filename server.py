@@ -1906,14 +1906,6 @@ def alerts_upcoming():
                 if deadline <= cutoff:
                     classify(deadline, {'id':r['id'],'kind':'tm_opposition_response','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
             except: pass
-        # 注册费缴纳（15天）
-        for t in db.execute("SELECT * FROM trademarks WHERE status='已受理' AND reg_fee_notice_date IS NOT NULL").fetchall():
-            r = row_to_dict(t)
-            try:
-                deadline = (date.fromisoformat(r['reg_fee_notice_date']) + timedelta(days=15)).isoformat()
-                if deadline <= cutoff:
-                    classify(deadline, {'id':r['id'],'kind':'tm_reg_fee','title':r['name'],'app_no':r['app_no'],'owner':r['owner'],'classes':r['classes'],'country':r['country']})
-            except: pass
 
     for lst in result.values(): lst.sort(key=lambda x: x['days'])
     result['total'] = sum(len(v) for v in result.values())
