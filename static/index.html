@@ -3604,6 +3604,28 @@ function AlertsView(_ref20) {
       React.createElement('div', {style:{fontSize:13, color:'#94a3b8'}}, days+'天内没有需要处理的年费或续展事项')),
 
     // 分组列表
+    // 紧急度概览进度条
+    upcoming && allItems.length > 0 && React.createElement('div', {style:{background:'rgba(255,255,255,0.85)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,0.6)',borderRadius:16,padding:'18px 22px',marginBottom:20,boxShadow:'0 4px 16px rgba(30,80,180,.10)'}},
+      React.createElement('div', {style:{fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:12,textTransform:'uppercase',letterSpacing:.5}}, '紧急度分布'),
+      React.createElement('div', {style:{display:'flex',height:12,borderRadius:8,overflow:'hidden',background:'#f1f5f9',marginBottom:10}},
+        groups.map(function(g) {
+          if (!g.items.length) return null;
+          var pct = (g.items.length / allItems.length * 100).toFixed(1);
+          return React.createElement('div', {key:g.key, style:{width:pct+'%',background:g.color,transition:'width 0.5s ease'}, title:g.label+': '+g.items.length+'项'});
+        })
+      ),
+      React.createElement('div', {style:{display:'flex',gap:16,flexWrap:'wrap'}},
+        groups.map(function(g) {
+          if (!g.items.length) return null;
+          return React.createElement('div', {key:g.key, style:{display:'flex',alignItems:'center',gap:6}},
+            React.createElement('div', {style:{width:8,height:8,borderRadius:'50%',background:g.color}}),
+            React.createElement('span', {style:{fontSize:12,color:'#475569'}}, g.label),
+            React.createElement('span', {style:{fontSize:13,fontWeight:700,color:g.color}}, g.items.length+'项')
+          );
+        })
+      )
+    ),
+
     upcoming && groups.map(function(g) {
       if (!g.items.length) return null;
       return React.createElement('div', {key:g.key, style:{marginBottom:20}},
