@@ -1509,26 +1509,42 @@ function Toast(_ref10) {
       gap: 7,
       zIndex: 3000
     }
-  }, toasts.map(function (t) {
+  }, toasts.map(function (t, i) {
     return /*#__PURE__*/React.createElement("div", {
       key: t.id,
+      className: 'animate-in',
       style: {
-        background: t.type === 'success' ? '#f0fdf4' : '#fef2f2',
+        background: t.type === 'success' ? 'rgba(240,253,244,0.95)' : 'rgba(254,242,242,0.95)',
+        backdropFilter: 'blur(12px)',
         border: "1px solid ".concat(t.type === 'success' ? '#bbf7d0' : '#fecaca'),
-        borderRadius: 10,
-        padding: '10px 15px',
+        borderRadius: 12,
+        padding: '12px 18px',
         color: t.type === 'success' ? '#15803d' : '#dc2626',
         fontSize: 13,
+        fontWeight: 500,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        boxShadow: '0 4px 20px rgba(0,0,0,.1)',
-        minWidth: 220
+        gap: 10,
+        boxShadow: '0 8px 32px rgba(0,0,0,.12)',
+        minWidth: 240,
+        animationDelay: (i * 0.05) + 's'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        background: t.type === 'success' ? '#dcfce7' : '#fee2e2',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       d: t.type === 'success' ? IC.check : IC.warn,
-      size: 13
-    }), t.msg);
+      size: 13,
+      s: t.type === 'success' ? '#16a34a' : '#dc2626'
+    })), t.msg);
   }));
 }
 function ConfirmDelete(_ref11) {
