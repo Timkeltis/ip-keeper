@@ -3453,8 +3453,10 @@ function WatchFolderPanel(_ref_wfp) {
 
 function AlertsView(_ref20) {
   var alerts = _ref20.alerts, dismissed = _ref20.dismissed, onDismiss = _ref20.onDismiss,
-    onUndismiss = _ref20.onUndismiss, onFeePaid = _ref20.onFeePaid, addToast = _ref20.addToast;
+    onUndismiss = _ref20.onUndismiss, onFeePaid = _ref20.onFeePaid, addToast = _ref20.addToast,
+    scrollTarget = _ref20.scrollTarget, onScrollDone = _ref20.onScrollDone;
 
+  var _useState_av0 = useState('alerts'), _av0 = _slicedToArray(_useState_av0,2), mainView = _av0[0], setMainView = _av0[1];
   var _useState_av1 = useState(null), _av1 = _slicedToArray(_useState_av1,2), upcoming = _av1[0], setUpcoming = _av1[1];
   var _useState_av2 = useState(90), _av2 = _slicedToArray(_useState_av2,2), days = _av2[0], setDays = _av2[1];
   var _useState_av3 = useState('all'), _av3 = _slicedToArray(_useState_av3,2), kindFilter = _av3[0], setKindFilter = _av3[1];
@@ -3462,13 +3464,28 @@ function AlertsView(_ref20) {
   var _useState_av5 = useState(false), _av5 = _slicedToArray(_useState_av5,2), paying = _av5[0], setPaying = _av5[1];
   var _useState_av6 = useState(new Set()), _av6 = _slicedToArray(_useState_av6,2), selected = _av6[0], setSelected = _av6[1];
 
+  var _useState_fp1 = useState(null), _fp1 = _slicedToArray(_useState_fp1,2), feeSchedule = _fp1[0], setFeeSchedule = _fp1[1];
+  var _useState_fp2 = useState('all'), _fp2 = _slicedToArray(_useState_fp2,2), feeLevelFilter = _fp2[0], setFeeLevelFilter = _fp2[1];
+  var _useState_fp3 = useState('all'), _fp3 = _slicedToArray(_useState_fp3,2), feeScopeFilter = _fp3[0], setFeeScopeFilter = _fp3[1];
+  var _useState_fp4 = useState(new Set()), _fp4 = _slicedToArray(_useState_fp4,2), feeSelected = _fp4[0], setFeeSelected = _fp4[1];
+  var _useState_fp5 = useState(false), _fp5 = _slicedToArray(_useState_fp5,2), feePaying = _fp5[0], setFeePaying = _fp5[1];
+
   var loadUpcoming = React.useCallback(function(d) {
     fetch(BASE + '/alerts/upcoming?days=' + d)
       .then(function(r){return r.json();})
       .then(function(j){ if(j.ok) setUpcoming(j.data); });
   }, []);
 
-  React.useEffect(function(){ loadUpcoming(days); }, [days]);
+  var loadFeeSchedule = React.useCallback(function() {
+    fetch(BASE + '/fees/schedule')
+      .then(function(r){return r.json();})
+      .then(function(j){ if(j.ok) setFeeSchedule(j.data); });
+  }, []);
+
+  React.useEffect(function(){
+    if (mainView === 'alerts') loadUpcoming(days);
+    if (!feeSchedule) loadFeeSchedule();
+  }, [mainView, days]);
 
   var KIND_LABEL = {patent_fee:'专利年费', tm_renewal:'商标续展', patent_expire:'专利到期', tm_rejection_review:'商标驳回复审', patent_oa_response:'答复审查意见', patent_rejection_review:'专利驳回复审', patent_grant_pay:'授权登记缴费', patent_exam_request:'实质审查请求', tm_opposition_period:'初审公告异议期', tm_opposition_response:'异议答辩'};
   var KIND_COLOR = {patent_fee:'#2563eb', tm_renewal:'#ea580c', patent_expire:'#7c3aed', tm_rejection_review:'#dc2626', patent_oa_response:'#dc2626', patent_rejection_review:'#dc2626', patent_grant_pay:'#059669', patent_exam_request:'#d97706', tm_opposition_period:'#ea580c', tm_opposition_response:'#dc2626'};
@@ -3534,10 +3551,55 @@ function AlertsView(_ref20) {
 
   var toggleSel = function(id){ setSelected(function(s){var n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n;}); };
 
+  var toggleFeeSel = function(id){ setFeeSelected(function(s){var n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n;}); };
+  var feeSelectedIds = Array.from(feeSelected);
+  var handleFeeBulkPay = function() {
+    if (!feeSelectedIds.length) return;
+    setFeePaying(true);
+    api.bulkFeePaid(feeSelectedIds).then(function(){
+      setFeePaying(false); setFeeSelected(new Set());
+      loadFeeSchedule(); onFeePaid && onFeePaid();
+      addToast && addToast('success', '已标记 '+feeSelectedIds.length+' 件年费已缴');
+    }).catch(function(){setFeePaying(false);});
+  };
+  var handleFeeExport = function() {
+    if (!feeSelectedIds.length) return;
+    fetch(BASE + '/export-fees', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids:feeSelectedIds})})
+    .then(function(r){ if(!r.ok) throw new Error('导出失败'); return r.blob(); })
+    .then(function(blob){ triggerDownload(blob, '网上缴费_'+new Date().toISOString().slice(0,10)+'.xlsx'); addToast&&addToast('success','已下载缴费信息（'+feeSelectedIds.length+'件）'); })
+    .catch(function(e){ addToast&&addToast('error','导出失败：'+(e.message||'请重试')); });
+  };
+  var isDomesticFee = function(x){ var c=String(x.country||'').trim(); if(c) return c==='中国'||c==='CN'||c==='China'; return true; };
+  var feeScheduleItems = feeSchedule ? feeSchedule.items.filter(function(x){
+    if(feeScopeFilter==='domestic') return isDomesticFee(x);
+    if(feeScopeFilter==='foreign') return !isDomesticFee(x);
+    return true;
+  }).filter(function(x){ return feeLevelFilter==='all' || x.level===feeLevelFilter; }) : [];
+  var LEVEL_LABEL = {overdue:'已逾期',urgent:'紧急',soon:'即将到期',notice:'90天内',normal:'正常'};
+  var LEVEL_COLOR = {overdue:'#dc2626',urgent:'#ea580c',soon:'#d97706',notice:'#0284c7',normal:'#16a34a'};
+
   return React.createElement('div', null,
+    React.createElement('div', {style:{display:'flex', gap:8, marginBottom:18}},
+      React.createElement('button', {onClick:function(){setMainView('alerts');},
+        style:{flex:1, padding:'14px 0', borderRadius:10, border:mainView==='alerts'?'2px solid #dc2626':'1px solid #e2e8f0', background:mainView==='alerts'?'#fef2f2':'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow:mainView==='alerts'?'0 2px 8px #dc262622':'none', transition:'all .2s'}
+      },
+        React.createElement('span', {style:{fontSize:20}}, '\u{1F514}'),
+        React.createElement('div', {style:{display:'flex', flexDirection:'column', alignItems:'flex-start'}},
+          React.createElement('span', {style:{fontSize:14, fontWeight:mainView==='alerts'?700:500, color:mainView==='alerts'?'#dc2626':'#475569'}}, '到期预警'),
+          React.createElement('span', {style:{fontSize:11, color:mainView==='alerts'?'#dc2626':'#94a3b8', marginTop:1}}, '近期需处理的事项'))
+      ),
+      React.createElement('button', {onClick:function(){setMainView('feePlan');},
+        style:{flex:1, padding:'14px 0', borderRadius:10, border:mainView==='feePlan'?'2px solid #059669':'1px solid #e2e8f0', background:mainView==='feePlan'?'#ecfdf5':'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow:mainView==='feePlan'?'0 2px 8px #05966922':'none', transition:'all .2s'}
+      },
+        React.createElement('span', {style:{fontSize:20}}, '\u{1F4CB}'),
+        React.createElement('div', {style:{display:'flex', flexDirection:'column', alignItems:'flex-start'}},
+          React.createElement('span', {style:{fontSize:14, fontWeight:mainView==='feePlan'?700:500, color:mainView==='feePlan'?'#059669':'#475569'}}, '缴费计划'),
+          React.createElement('span', {style:{fontSize:11, color:mainView==='feePlan'?'#059669':'#94a3b8', marginTop:1}}, feeSchedule ? feeSchedule.total+'件待缴' : '加载中...'))
+      )
+    ),
+    mainView === 'alerts' && React.createElement('div', null,
     // 头部：天数选择 + 类型筛选 + 统计
     React.createElement('div', {style:{display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap'}},
-      React.createElement('h3', {style:{fontSize:18, fontWeight:700, color:'#0f172a', margin:0}}, '到期预警中心'),
       React.createElement('div', {style:{flex:1}}),
       React.createElement('span', {style:{fontSize:12, color:'#64748b'}},'提前预警：'),
       [30,60,90,180].map(function(d){
@@ -3687,7 +3749,86 @@ function AlertsView(_ref20) {
                 item.days < 0 ? '逾期'+Math.abs(item.days)+'天' : item.days === 0 ? '今天' : item.days+'天后'),
               React.createElement('div', {style:{fontSize:11, color:'#94a3b8', marginTop:2}}, item.deadline)));
         }));
-    }));
+    })),
+    mainView === 'feePlan' && React.createElement('div', null,
+      feeSchedule && React.createElement('div', {style:{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px,1fr))', gap:12, marginBottom:18}},
+        React.createElement('div', {style:{background:'#fff', border:'1px solid #D8E8F7', borderRadius:10, padding:'14px 16px'}},
+          React.createElement('div', {style:{fontSize:11, color:'#64748b', marginBottom:4}}, '全部待缴'),
+          React.createElement('div', {style:{fontSize:22, fontWeight:800, color:'#0f172a'}}, feeSchedule.total),
+          React.createElement('div', {style:{fontSize:11, color:'#94a3b8', marginTop:2}}, '件专利')),
+        React.createElement('div', {style:{background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'14px 16px'}},
+          React.createElement('div', {style:{fontSize:11, color:'#dc2626', marginBottom:4}}, '已逾期'),
+          React.createElement('div', {style:{fontSize:22, fontWeight:800, color:'#dc2626'}}, feeSchedule.overdue),
+          React.createElement('div', {style:{fontSize:11, color:'#dc2626', marginTop:2, opacity:.7}}, '需立即处理')),
+        React.createElement('div', {style:{background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:10, padding:'14px 16px'}},
+          React.createElement('div', {style:{fontSize:11, color:'#ea580c', marginBottom:4}}, '紧急（14天内）'),
+          React.createElement('div', {style:{fontSize:22, fontWeight:800, color:'#ea580c'}}, feeSchedule.urgent),
+          React.createElement('div', {style:{fontSize:11, color:'#ea580c', marginTop:2, opacity:.7}}, '即将到期')),
+        React.createElement('div', {style:{background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:10, padding:'14px 16px'}},
+          React.createElement('div', {style:{fontSize:11, color:'#059669', marginBottom:4}}, '年费合计'),
+          React.createElement('div', {style:{fontSize:22, fontWeight:800, color:'#059669'}}, '\u00A5'+(feeSchedule.total_reduced||0).toLocaleString()),
+          React.createElement('div', {style:{fontSize:11, color:'#059669', marginTop:2, opacity:.7}}, '费减后金额'))
+      ),
+      React.createElement('div', {style:{display:'flex', gap:8, marginBottom:16, flexWrap:'wrap', alignItems:'center'}},
+        React.createElement('div', {style:{display:'flex', gap:6}},
+          [['all','全部'],['overdue','已逾期'],['urgent','14天内'],['soon','30天内'],['notice','90天内'],['normal','正常']].map(function(opt){
+            var active = feeLevelFilter===opt[0];
+            var cnt = opt[0]==='all' ? (feeSchedule?feeSchedule.items.length:0) : (feeSchedule?feeSchedule.items.filter(function(x){return x.level===opt[0];}).length:0);
+            return React.createElement('button', {key:opt[0], onClick:function(){setFeeLevelFilter(opt[0]);},
+              style:{padding:'5px 12px', borderRadius:6, border:active?'1.5px solid #059669':'1px solid #D8E8F7', background:active?'#ecfdf5':'#fff', color:active?'#059669':'#64748b', fontSize:12, fontWeight:active?600:400, cursor:'pointer'}
+            }, opt[1], cnt>0&&React.createElement('span',{style:{marginLeft:4,fontSize:10,opacity:.7}},cnt));
+          })
+        ),
+        React.createElement('div', {style:{flex:1}}),
+        React.createElement('div', {style:{display:'flex', gap:6}},
+          [['all','全部'],['domestic','国内'],['foreign','国外']].map(function(opt){
+            var active = feeScopeFilter===opt[0];
+            return React.createElement('button', {key:opt[0], onClick:function(){setFeeScopeFilter(opt[0]);},
+              style:{padding:'5px 12px', borderRadius:6, border:active?'1.5px solid #059669':'1px solid #D8E8F7', background:active?'#ecfdf5':'#fff', color:active?'#059669':'#64748b', fontSize:12, fontWeight:active?600:400, cursor:'pointer'}
+            }, opt[1]);
+          })
+        )
+      ),
+      feeSelectedIds.length > 0 && React.createElement('div', {style:{background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:10, padding:'10px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10}},
+        React.createElement('span', {style:{fontSize:13, color:'#059669', fontWeight:600}}, '已选 '+feeSelectedIds.length+' 件'),
+        React.createElement('button', {onClick:handleFeeExport, style:{padding:'6px 16px',borderRadius:7,border:'none',background:'#16a34a',color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}, '下载缴费信息 Excel'),
+        React.createElement('button', {onClick:handleFeeBulkPay, disabled:feePaying, style:{padding:'6px 14px',borderRadius:7,border:'none',background:'#059669',color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}, feePaying?'处理中...':'标记已缴'),
+        React.createElement('button', {onClick:function(){setFeeSelected(new Set());}, style:{padding:'6px 12px',borderRadius:7,border:'1px solid #a7f3d0',background:'transparent',color:'#059669',fontSize:12,cursor:'pointer',marginLeft:'auto'}}, '取消选择')
+      ),
+      feeScheduleItems.length > 0 && React.createElement('div', {style:{display:'flex', alignItems:'center', gap:8, marginBottom:10}},
+        React.createElement('input', {type:'checkbox', checked:feeSelectedIds.length===feeScheduleItems.length&&feeScheduleItems.length>0,
+          onChange:function(){if(feeSelectedIds.length===feeScheduleItems.length) setFeeSelected(new Set()); else setFeeSelected(new Set(feeScheduleItems.map(function(x){return x.id;})));}, style:{width:14,height:14,cursor:'pointer'}}),
+        React.createElement('span', {style:{fontSize:12, color:'#64748b'}}, '全选（'+feeScheduleItems.length+'件）')
+      ),
+      !feeSchedule && React.createElement('div', {style:{textAlign:'center', color:'#94a3b8', padding:'60px 0', fontSize:13}}, '加载中...'),
+      feeSchedule && feeScheduleItems.length === 0 && React.createElement('div', {style:{textAlign:'center', padding:'80px 0'}},
+        React.createElement('div', {style:{fontSize:40, marginBottom:12}}, '\u{1F389}'),
+        React.createElement('div', {style:{fontSize:16, fontWeight:600, color:'#16a34a', marginBottom:6}}, '暂无待缴年费')),
+      feeSchedule && feeScheduleItems.map(function(item) {
+        var isSel = feeSelected.has(item.id);
+        var lc = LEVEL_COLOR[item.level] || '#64748b';
+        var ll = LEVEL_LABEL[item.level] || item.level;
+        return React.createElement('div', {key:'fee-'+item.id,
+          style:{background:'#fff', border:'1px solid #D8E8F7', borderRadius:10, padding:'12px 16px', marginBottom:8, display:'flex', alignItems:'center', gap:12, boxShadow:isSel?'0 0 0 2px #05966933':'none'}},
+          React.createElement('input', {type:'checkbox', checked:isSel, onChange:function(){toggleFeeSel(item.id);}, style:{width:14,height:14,cursor:'pointer',flexShrink:0}}),
+          React.createElement('span', {style:{fontSize:11, background:lc+'18', color:lc, borderRadius:5, padding:'2px 8px', fontWeight:600, whiteSpace:'nowrap', flexShrink:0}}, ll),
+          React.createElement('div', {style:{flex:1, minWidth:0}},
+            React.createElement('div', {style:{display:'flex', alignItems:'center', gap:8, marginBottom:4}},
+              React.createElement('span', {style:{fontSize:13, fontWeight:600, color:'#1e293b'}}, item.title),
+              item.country && React.createElement('span', {style:{fontSize:10, background:'#f1f5f9', color:'#475569', borderRadius:4, padding:'1px 6px'}}, item.country)),
+            React.createElement('div', {style:{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}},
+              item.app_no && React.createElement('span',{style:{fontSize:11,color:'#64748b',fontFamily:'monospace'}}, item.app_no),
+              React.createElement('span',{style:{fontSize:11,color:'#475569'}}, '第'+item.current_year+'年年费'),
+              item.owner && React.createElement('span',{style:{fontSize:11,color:'#64748b'}}, item.owner),
+              item.reduced_fee > 0 && React.createElement('span',{style:{fontSize:12,fontWeight:700,color:'#059669'}}, '\u00A5'+item.reduced_fee.toLocaleString()),
+              item.base_fee > 0 && item.base_fee !== item.reduced_fee && React.createElement('span',{style:{fontSize:11,color:'#94a3b8',textDecoration:'line-through'}}, '\u00A5'+item.base_fee.toLocaleString()))),
+          React.createElement('div', {style:{textAlign:'right', flexShrink:0, minWidth:80}},
+            React.createElement('div', {style:{fontSize:15, fontWeight:800, color:lc, fontFamily:'monospace'}},
+              item.days < 0 ? '逾期'+Math.abs(item.days)+'天' : item.days+'天后'),
+            React.createElement('div', {style:{fontSize:11, color:'#94a3b8', marginTop:2}}, item.deadline)));
+      })
+    )
+  );
 }
 
 
@@ -4495,7 +4636,6 @@ function ModSearch(cfg) {
   ];
   return (React.createElement('div',null,
     React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
-      React.createElement('h3',{style:{fontSize:18,fontWeight:700,color:'#0f172a',margin:0}},'统计分析'),
       React.createElement('div',{style:{display:'flex',gap:8,alignItems:'center'}},
         React.createElement('button',{onClick:function(){setShowComp(!showComp);},
           style:{padding:'6px 16px',borderRadius:8,border:'1.5px solid '+(showComp?'#2563EB':'#D8E8F7'),
@@ -7274,8 +7414,7 @@ function DataHealthView(_refDH) {
   return React.createElement('div', null,
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 } },
       React.createElement('div', null,
-        React.createElement('h2', { style: { fontSize: 22, fontWeight: 900, color: '#0F1F3D', margin: 0, letterSpacing: -.5 } }, '数据体检'),
-        React.createElement('div', { style: { fontSize: 13, color: '#64748b', marginTop: 5 } }, '检查字段缺失、状态冲突、类型写法和期限维护')),
+        React.createElement('div', { style: { fontSize: 12, color: '#64748b', marginTop: 5 } }, '检查字段缺失、状态冲突、类型写法和期限维护')),
       React.createElement('div', { style: { fontSize: 12, color: '#64748b', background: '#fff', border: '1px solid #D8E8F7', borderRadius: 8, padding: '8px 12px' } }, '共 ' + issues.length + ' 项待确认')),
     React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 } },
       card('全部问题', issues.length, '#0f766e', '覆盖专利、商标、软著', filter === 'all', function() { setFilter('all'); }),
@@ -7656,6 +7795,21 @@ function App() {
     }
   }, [serverOk]);
   useEffect(function () {
+    if (serverOk) {
+      fetch(BASE + '/alerts/upcoming?days=90')
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(j.ok) {
+            var d = j.data;
+            var total = (d.overdue||[]).length + (d.urgent||[]).length + (d.soon||[]).length + (d.upcoming||[]).length;
+            var urg = (d.overdue||[]).length + (d.urgent||[]).length;
+            setUpcomingAlertCount(total);
+            setUpcomingUrgentCount(urg);
+          }
+        });
+    }
+  }, [serverOk]);
+  useEffect(function () {
     if (serverOk && view === 'stats') {
       loadP('', '全部', '');
       loadT('', '全部', '', '');
@@ -7684,8 +7838,14 @@ function App() {
   var urgentCount = alerts.filter(function (a) {
     return a.level === 'urgent' || a.level === 'overdue';
   }).length;
+  var pendingCount = alerts.filter(function (a) {
+    return a.level === 'overdue' || a.level === 'urgent' || a.level === 'warning' || a.level === 'notice';
+  }).length;
   var healthIssueCount = buildDataHealth(patents, trademarks, copyrights).length;
   var _docsCountState = React.useState(0), _docsCountState2 = _slicedToArray(_docsCountState, 2), docsCount = _docsCountState2[0], setDocsCount = _docsCountState2[1];
+  var _upcomingCountState = React.useState(0), _upcomingCountState2 = _slicedToArray(_upcomingCountState, 2), upcomingAlertCount = _upcomingCountState2[0], setUpcomingAlertCount = _upcomingCountState2[1];
+  var _upcomingUrgentState = React.useState(0), _upcomingUrgentState2 = _slicedToArray(_upcomingUrgentState, 2), upcomingUrgentCount = _upcomingUrgentState2[0], setUpcomingUrgentCount = _upcomingUrgentState2[1];
+  var _scrollTargetState = React.useState(null), _scrollTargetState2 = _slicedToArray(_scrollTargetState, 2), alertsScrollTarget = _scrollTargetState2[0], setAlertsScrollTarget = _scrollTargetState2[1];
   var thisYear = String(new Date().getFullYear());
   var patentAuthorizedCount = patents.filter(function(p) { return normalizePatentStatus(p.status) === '已授权'; }).length;
   var trademarkRegisteredCount = trademarks.filter(function(t) { return normalizeTrademarkStatus(t.status) === '已注册'; }).length;
@@ -7899,7 +8059,7 @@ function App() {
     id: 'alerts',
     label: '预警中心',
     icon: IC.bell,
-    badge: urgentCount
+    badge: upcomingAlertCount
   }, {
     id: 'calendar',
     label: '期限日历',
@@ -8446,21 +8606,7 @@ function App() {
     style: {
       marginBottom: 22
     }
-  }, /*#__PURE__*/React.createElement("h2", {
-    style: {
-      fontSize: 22,
-      fontWeight: 900,
-      color: '#0F1F3D',
-      margin: 0,
-      letterSpacing: -0.6
-    }
-  }, "\u77E5\u8BC6\u4EA7\u6743\u8D44\u4EA7\u603B\u89C8"), /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 13,
-      color: '#64748b',
-      marginTop: 5
-    }
-  }, "\u5168\u751F\u547D\u5468\u671F\u7BA1\u7406 \xB7 \u5230\u671F\u96F6\u9057\u6F0F")), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(4,1fr)',
@@ -8496,11 +8642,12 @@ function App() {
     }
   }), /*#__PURE__*/React.createElement(StatCard, {
     label: "\u5F85\u5904\u7406\u9884\u8B66",
-    val: alerts.length,
-    sub: urgentCount + ' 项紧急',
+    val: upcomingAlertCount,
+    sub: upcomingUrgentCount > 0 ? upcomingUrgentCount + ' 项紧急' : '无紧急事项',
     accent: "#dc2626",
     icon: IC.bell,
     onClick: function onClick() {
+      setAlertsScrollTarget('urgent');
       return setView('alerts');
     }
   })), /*#__PURE__*/React.createElement("div", {
@@ -8546,7 +8693,7 @@ function App() {
     onClick: function onClick() {
       return setView('docs');
     }
-  })), urgentCount > 0 && /*#__PURE__*/React.createElement("div", {
+  })), upcomingUrgentCount > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: 'linear-gradient(135deg, #FFF1F0 0%, #FFF5F5 100%)',
       border: '1px solid #FCA5A5',
@@ -8556,6 +8703,7 @@ function App() {
       cursor: 'pointer'
     },
     onClick: function onClick() {
+      setAlertsScrollTarget('urgent');
       return setView('alerts');
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -8902,6 +9050,8 @@ function App() {
   })), view === 'alerts' && /*#__PURE__*/React.createElement(AlertsView, {
     alerts: alerts,
     dismissed: dismissed,
+    scrollTarget: alertsScrollTarget,
+    onScrollDone: function() { setAlertsScrollTarget(null); },
     onDismiss: (/*#__PURE__*/function () {
       var _ref70 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee26(id) {
         return _regenerator().w(function (_context26) {

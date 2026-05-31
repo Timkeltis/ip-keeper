@@ -677,8 +677,44 @@ def next_patent_fee_date_after_payment(country, app_date, grant_date, current_ye
     country = _normalize_country(country)
     rule = _patent_fee_rule(country)
     d = _to_date(next_fee_date)
-    if not rule or not d:
+    # 若原缴费日为空，根据国家规则推算当前应缴截止日
+    if not d:
+        if rule:
+            # 国外专利：按规则的 basis 选择基准日
+            basis = rule.get('basis', 'app_date')
+            anchor = _to_date(grant_date) if basis == 'grant_date' else _to_date(app_date)
+            if anchor and current_year:
+                try:
+                    stage = float(current_year)
+                    if rule['mode'] == 'milestone':
+                        # 里程碑模式：3.5/7.5/11.5年，用月份计算
+                        if stage <= 3.5:
+                            d = _add_months(anchor, 42)
+                        elif stage <= 7.5:
+                            d = _add_months(anchor, 90)
+                        else:
+                            d = _add_months(anchor, 138)
+                    else:
+                        years_offset = max(0, int(round(stage)) - 1)
+                        d = _add_years(anchor, years_offset)
+                        if rule['mode'] == 'annual_month_end':
+                            d = _month_end(d)
+                except Exception:
+                    d = None
+        else:
+            # 国内专利：申请日+1个月，按年度顺延
+            app_d = _to_date(app_date)
+            if app_d and current_year:
+                try:
+                    base = _add_months(app_d, 1)
+                    d = _add_years(base, int(float(current_year)) - 1)
+                except Exception:
+                    d = None
+    if not d:
         return None
+    if not rule:
+        # 无特殊规则的国家（如中国），直接顺延一年
+        return _add_years(d, 1).isoformat()
     if country == '新加坡':
         app_d = _to_date(app_date)
         if not app_d:
@@ -1809,6 +1845,59 @@ def import_template(dtype):
     fnames = {'patents':'专利导入模板.xlsx','trademarks':'商标导入模板.xlsx','copyrights':'软著导入模板.xlsx'}
     return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True, download_name=fnames.get(dtype,'导入模板.xlsx'))
+
+# ══════════════ 缴费计划 API（全量） ══════════════
+@app.route('/api/fees/schedule', methods=['GET','OPTIONS'])
+def fees_schedule():
+    """返回所有已授权专利的年费计划，不限截止日。支持提前缴费规划。"""
+    if request.method == 'OPTIONS': return ok()
+    today = date.today()
+    items = []
+    with get_db() as db:
+        for p in db.execute("SELECT * FROM patents WHERE status IN ('已授权','授权')", []).fetchall():
+            r = row_to_dict(p)
+            deadline = r.get('next_fee_date') or calc_patent_next_fee_date(
+                r.get('country'), r.get('app_date'), r.get('grant_date'),
+                r.get('current_year'), r.get('next_fee_date'))
+            if not deadline:
+                continue
+            try:
+                days = (date.fromisoformat(deadline[:10]) - today).days
+            except:
+                continue
+            cy = r.get('current_year') or 1
+            # 国外专利费用标准因国家而异，无法统一计算；仅计算国内专利
+            _country = _normalize_country(r.get('country',''))
+            if _country in ('中国', 'CN') or not _patent_fee_rule(_country):
+                base, reduced = get_fee(r.get('type','发明'), cy, r.get('fee_entity','有费减-单个主体'))
+            else:
+                base, reduced = 0, 0
+            # 判断状态标签
+            if days < 0:
+                level = 'overdue'
+            elif days <= 14:
+                level = 'urgent'
+            elif days <= 30:
+                level = 'soon'
+            elif days <= 90:
+                level = 'notice'
+            else:
+                level = 'normal'
+            items.append({
+                'id': r['id'], 'title': r.get('title',''), 'app_no': r.get('app_no',''),
+                'type': r.get('type',''), 'country': r.get('country',''), 'owner': r.get('owner',''),
+                'current_year': cy, 'fee_entity': r.get('fee_entity',''),
+                'deadline': deadline, 'days': days, 'level': level,
+                'base_fee': base, 'reduced_fee': reduced,
+            })
+    items.sort(key=lambda x: x['days'])
+    # 统计
+    total = len(items)
+    overdue_count = sum(1 for x in items if x['level'] == 'overdue')
+    urgent_count = sum(1 for x in items if x['level'] in ('overdue','urgent'))
+    total_reduced = sum(x['reduced_fee'] for x in items)
+    return ok({'items': items, 'total': total, 'overdue': overdue_count,
+               'urgent': urgent_count, 'total_reduced': total_reduced})
 
 # ══════════════ 到期预警 API ══════════════
 @app.route('/api/alerts/upcoming', methods=['GET','OPTIONS'])
